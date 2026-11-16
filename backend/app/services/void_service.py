@@ -106,10 +106,12 @@ def void_ticket(ticket_id: int, body: dict[str, Any]) -> dict[str, Any]:
             rolled_back_lines = 0
 
             if status_before == "applied":
-                # Global, sole fate policy: roll back via history, keep batch counts intact.
-                rolled_back_lines = len(ticket_repo.list_lines(conn, ticket["id"]))
-                from app.services import void_projection
-                void_projection.note_void_without_book_clear(conn, ticket, voided_at)
+                # Global, sole fate policy (applied_rollback): restore the book to its
+                # pre-void state via append-only history, never delete apply rows,
+                # never rewrite the original apply batch counts. Book restore, ticket
+                # voiding and the void audit record commit in this one transaction, so
+                # a void is visible iff the book no longer hangs on this ticket.
+                rolled_back_lines = _rollback_applied(conn, ticket, voided_at)
 
             changed = ticket_repo.mark_voided(
                 conn, ticket_id, voided_at=voided_at, reason=reason

@@ -1,9 +1,11 @@
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.db import connect
 from app.services import ticket_service as svc
+from app.services import void_projection
 from app.services import void_service
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -52,17 +54,13 @@ def create_ticket(body: TicketCreateIn):
 def void_ticket(ticket_id: int, body: TicketVoidIn):
     return void_service.void_ticket(ticket_id, body.model_dump())
 
-from app.db import connect
-from app.services import void_projection
-
-
 @router.get("/{ticket_id}/void-gap")
 def void_gap(ticket_id: int):
+    """Read-only probe: after a void, no book row may still hang on the ticket."""
     conn = connect()
     try:
         row = conn.execute("SELECT * FROM price_tickets WHERE id=?", (ticket_id,)).fetchone()
         if not row:
-            from fastapi import HTTPException
             raise HTTPException(404, "改价单不存在")
         return void_projection.summarize_void_gap(conn, row["ticket_no"])
     finally:
